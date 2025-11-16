@@ -2,7 +2,7 @@ import os
 from astropy.io import fits
 
 # Root directory
-root_dir = "/Users/sangwonkang/Documents/UoE/TGP/TGP_data/Correction/bias"
+root_dir = ""
 
 # Trimmed file saving folder
 output_root = os.path.join(root_dir, "Trimmed_files")
