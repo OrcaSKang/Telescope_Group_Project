@@ -31,7 +31,7 @@ Accurate alignment was crucial for the later stages of the project, such as phot
 
 ---
 
-## 🔧 Dependencies
+## Dependencies
 
 This project uses Python and the following key packages:
 
