@@ -12,7 +12,7 @@ aligned_dir.mkdir(exist_ok=True)
 def align(target_name):
     files = sorted(root_dir.glob(f"*{target_name}*.fits"))
     if not files:
-        print(f"⚠️ No fits files found for target '{target_name}'")
+        print(f"No fits files found for target '{target_name}'")
         return
 
     reference_file = None
@@ -49,7 +49,7 @@ def align(target_name):
             aligned, footprint = aa.register(data, reference_image, max_control_points=250, detection_sigma=2.0)
             aligned_path = aligned_dir / p.name
             fits.writeto(aligned_path, aligned, header, overwrite=True)
-            print(f"✨ Aligned {p.name} → {aligned_path}")
+            print(f"Aligned {p.name} → {aligned_path}")
         except Exception as e:
             print(f"Failed to align {p.name}: {e}")
 
