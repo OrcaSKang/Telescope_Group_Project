@@ -1,9 +1,13 @@
 # Telescope_Group_Project
 
-This repository contains the code developed as part of the Telescope Group Project undertaken during the 2025/26 academic year.  
-The broader aim of the project was to construct a cluster catalogue, determine membership, and produce a Hertzsprung–Russell (HR) diagram for the selected cluster. The analysis required a complete workflow spanning image reduction, alignment, photometry, catalogue building, and astrophysical interpretation.
+This repository contains the code developed as part of the Telescope Group Project undertaken during the 2025/26 academic year.
 
-Only the initial stages of the workflow are included in this repository. These form the essential foundation on which the later analysis was built.
+The aim of the project was to construct cluster catalogues, determine membership, and produce Hertzsprung–Russell (HR) diagrams. 
+HR diagrams of a young cluster and an old cluster were compared to investigate differences in their stellar populations and evolutionary stages.
+
+The analysis required a complete workflow spanning image reduction, alignment, photometry, catalogue construction, and astrophysical interpretation.
+
+Two open clusters were analysed: a young cluster (NGC 6754, also known as M52) and an old cluster (NGC 6755).
 
 ---
 
@@ -28,6 +32,16 @@ This was necessary to:
 - Prepare for combined catalogues and HR diagram construction  
 
 Accurate alignment was crucial for the later stages of the project, such as photometry, cluster membership analysis, and catalogue assembly.
+
+### 3. Cluster Catalogue Construction
+Source extraction was performed using `sep`, producing catalogues for two observed clusters:
+
+- Background estimation  
+- Object detection and photometry  
+- Catalogue construction for each filter  
+- Transfer to TOPCAT via SAMP for inspection and cross-matching  
+
+These catalogues provide the data points required to construct the HR diagram.
 
 ---
 
