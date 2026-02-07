@@ -10,13 +10,17 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy import interpolate
+from astropy.table import Table
 
 ms_data_path = 'main_sequence.dat'
 fake_cluster_path = 'fake_cluster_clean.dat'
+cluster_path = 'final_catalogue_M52.fits'
+cluster_path_2sigma = 'final_catalogue_M52_2sigma.fits'
 
 # Assuming data is in a structured format like CSV or similar
 ms_data = pd.read_csv(ms_data_path, sep='\\s+', comment='#', engine='python')
 fake_cluster_data = pd.read_csv(fake_cluster_path, sep='\\s+', comment='#', engine='python')
+cluster_data = Table.read(cluster_path, format='fits')
 
 # convert to numpy array indexing
 ms_data = ms_data.values
@@ -28,10 +32,98 @@ fake_cluster_data = fake_cluster_data.values
 
 # main sequence data is organised as:
 # SpT Teff logT BCv Mv logL B-V
+
+# cluster data is organised as:
+# thresh npix tnpix ... mag_v magerr_v mab_b magerr_b mag_u magerr_u ...
+# [0]    [1]  [2]   ...
 ####################################
 
+cluster_mag_v = np.array(cluster_data['mag_v'].tolist())
+cluster_mag_b = np.array(cluster_data['mag_b'].tolist())
+cluster_mag_u = np.array(cluster_data['mag_u'].tolist())
+cluster_magerr_v = np.array(cluster_data['magerr_v'].tolist())
+cluster_magerr_b = np.array(cluster_data['magerr_b'].tolist())
+cluster_magerr_u = np.array(cluster_data['magerr_u'].tolist())
+
+# filter out data points with None value in at least one band
+remove_index = []
+for i in range(0, len(cluster_mag_v)):
+    if cluster_mag_v[i] is None:
+        remove_index.append(i)
+    elif cluster_mag_b[i] is None:
+        remove_index.append(i)
+    elif cluster_mag_u[i] is None:
+        remove_index.append(i)
+    elif cluster_magerr_v[i] is None:
+        remove_index.append(i)
+    elif cluster_magerr_b[i] is None:
+        remove_index.append(i)
+    elif cluster_magerr_u[i] is None:
+        remove_index.append(i)
+    else:
+        continue
+
+i = np.array(remove_index)
+cluster_mag_v = np.delete(cluster_mag_v, i)
+cluster_mag_b = np.delete(cluster_mag_b, i)
+cluster_mag_u = np.delete(cluster_mag_u, i)
+cluster_magerr_v = np.delete(cluster_magerr_v, i)
+cluster_magerr_b = np.delete(cluster_magerr_b, i)
+cluster_magerr_u = np.delete(cluster_magerr_u, i)
+
+cluster_mag_v = cluster_mag_v.astype(float)
+cluster_mag_b = cluster_mag_b.astype(float)
+cluster_mag_u = cluster_mag_u.astype(float)
+cluster_magerr_v = cluster_magerr_v.astype(float)
+cluster_magerr_b = cluster_magerr_b.astype(float)
+cluster_magerr_u = cluster_magerr_u.astype(float)
+
+cluster_bv = cluster_mag_b - cluster_mag_v
+cluster_ub = cluster_mag_u - cluster_mag_b
+cluster_err_bv = np.sqrt(cluster_magerr_v**2 + cluster_magerr_b**2)
+cluster_err_ub = np.sqrt(cluster_magerr_u**2 + cluster_magerr_b**2)
+
+# filter out points with large uncertainties
+remove_index = []
+for i in range(0, len(cluster_err_ub)):
+    if cluster_err_ub[i] >= 0.05:
+        remove_index.append(i)
+    elif cluster_err_bv[i] >= 0.05:
+        remove_index.append(i)
+
+j = np.array(remove_index)
+cluster_ub = np.delete(cluster_ub, j)
+cluster_bv = np.delete(cluster_bv, j)
+cluster_err_ub = np.delete(cluster_err_ub, j)
+cluster_err_bv = np.delete(cluster_err_bv, j)
+
+# Calculate SNR to clean data
+window_size = 2  # adjust based on data density
+local_background = np.zeros_like(cluster_ub)
+local_noise = np.zeros_like(cluster_ub)
+
+for i in range(len(cluster_ub)):
+    start = max(0, i - window_size // 2)
+    end = min(len(cluster_ub), i + window_size // 2 + 1)
+
+    local_background[i] = np.median(cluster_ub[start:end])
+    local_noise[i] = np.median(cluster_err_ub[start:end])
+
+# SNR = deviation from local background / local uncertainty
+deviation = np.abs(cluster_ub - local_background)
+SNR = deviation / np.sqrt(cluster_err_ub**2 + local_noise**2)
+
+threshold = 3
+cluster_ub = cluster_ub[SNR>threshold]
+cluster_err_ub = cluster_err_ub[SNR>threshold]
+cluster_bv = cluster_bv[SNR>threshold]
+cluster_err_bv = cluster_err_bv[SNR>threshold]
+
 # Values for R_V, A_U/A_V and A_B/A_V are taken from Cardelli 89
-A_V = np.arange(0.96, 1, 0.000001)
+#A_V = np.arange(0, 2, 0.000001) # overall range
+A_V = np.arange(1.1117, 1.1127, 0.0000001) # 1 sigma tolerance
+#A_V = np.arange(1.0799007, 1.0799009, 0.0000001) # 2 sigma tolerance
+
 R_V = 3.1
 
 A_V = np.array(A_V)
@@ -63,36 +155,29 @@ BVint = [-0.30, -0.28, -0.26, -0.25, -0.24, -0.22, -0.20, -0.19, -0.18,
 # merge intrinsic data sets, remove duplicates and sort
 int_colour = list(set(zip(BVint, UBint)))
 int_colour.sort(key=lambda x: x[1])
-
 BV_sorted = [item[0] for item in int_colour]
 UB_sorted = [item[1] for item in int_colour]
 
-# Corresponding spectral type
-SpecT = ['B0.0', 'B0.05', 'B1.0', 'B1.5', 'B2.0', 'B2.5', 'B3.0', 'B3.5', 'B4.0', 'B4.5',
-         'B5.5', 'B6.0', 'B7.0', 'B7.5', 'B8.0', 'B8.5', 'B9.0', 'B9.5', 'A0.0', 'A1.0',
-         'A2.0', 'A3.0', 'A4.0', 'A5.0', 'A6.0', 'A7.0', 'A8.0', 'A9.0', 'F0.0', 'F1.0',
-         'F2.0', 'F5.0', 'F8.0', 'G0.0', 'G2.0', 'G3.0', 'G5.0', 'G8.0', 'K0.0', 'K1.0', 'K2.0',
-         'K3.0', 'K4.0', 'K5.0', 'K7.0', 'M0.0', 'M1.0', 'M2.0', 'M3.0', 'M4.0']
-
+# fitted interpolation
 f1 = interpolate.interp1d(BV_sorted, UB_sorted, kind='linear', bounds_error=False, fill_value='extrapolate')
 
 x_min, x_max = min(BV_sorted), max(BV_sorted)
-x = np.arange(x_min, x_max, 0.01)
-
+x = np.arange(x_min, x_max, 0.001)
 y = f1(x)
 
+# minimising chi-squared
 chiSquared = []
 for i in range(len(A_V)):
     dx = delx[i]  # ∆(B-V)
     dy = dely[i]  # ∆(U-B)
 
     # shifted cluster data for this A_V value
-    shifted_BV = fake_cluster_data[:,-1] - dx
-    shifted_UB = fake_cluster_data[:,-2] - dy
+    shifted_BV = cluster_bv - dx
+    shifted_UB = cluster_ub - dy
 
     # calculate chi-squared
     residuals = shifted_UB - f1(shifted_BV)
-    chi = np.sum((residuals / UBerr)**2)
+    chi = np.sum((residuals / cluster_err_ub)**2)
     chiSquared.append(chi)
 
 chiSquared = np.array(chiSquared)
@@ -103,9 +188,9 @@ optimal_A_V = A_V[min_index_chi] #find optimal value of A_V
 delx = optimal_A_V / R_V # redefine x and y shifts for optimal A_V value
 dely = optimal_A_V*(A_UdivA_V-A_BdivA_V)
 
-# find the uncertainty on A_V
+# find the uncertainty on A_V #
 
-# function to find closest value to min chi-squared
+# function to find the closest value to min chi-squared
 def closest(lst, K):
     return lst[min(range(len(lst)), key=lambda i: abs(lst[i] - K))]
 
@@ -119,23 +204,24 @@ index2 = np.where(A_V == closest(A_V, K))
 lower_err = optimal_A_V - A_V[index1]
 upper_err = A_V[index2] - optimal_A_V
 
-# error finding
+# error finding of optimal_A_V
 if lower_err == upper_err:
-    optimal_A_V_err = upper_err
+    optimal_A_V_err = np.mean([upper_err, upper_err])
+    print(fr'Optimal $A_V$ error: {optimal_A_V_err}')
 elif lower_err != upper_err:
     print(f'Error difference: {lower_err} - {upper_err}')
     optimal_A_V_err = np.mean([lower_err, upper_err])
 else:
-    print('How is it different')
+    print('Error finding the error on the optimal extinction co-efficient')
 
 # plot A_V plot and colour-colour plot side by side
-fig, ax = plt.subplot_mosaic([['data', 'A_V']], figsize=(12, 5))
-ax['data'].errorbar(fake_cluster_data[:,-1], fake_cluster_data[:,-2],
-             yerr=UBerr, capsize=5, fmt='o', elinewidth=1, capthick=1, # for not ignore x errors
+fig, ax = plt.subplot_mosaic([['data', 'A_V']], figsize=(14, 5))
+ax['data'].errorbar(cluster_bv, cluster_ub,
+             yerr=cluster_err_ub, capsize=5, fmt='o', elinewidth=1, capthick=1,
              color='green', label=f'Observed Cluster Data', markersize=1, zorder=1)
-ax['data'].errorbar(fake_cluster_data[:,-1]-delx, fake_cluster_data[:,-2]-dely,
-             yerr=UBerr, capsize=5, fmt='o', elinewidth=1, capthick=1,
-             color='red', label=fr'Dereddened Cluster Data, $A_V$={optimal_A_V:.3f}±{optimal_A_V_err[0]:.3f}',
+ax['data'].errorbar(cluster_bv-delx, cluster_ub-dely,
+             yerr=cluster_err_ub, capsize=5, fmt='o', elinewidth=1, capthick=1,
+             color='red', label=fr'Dereddened Cluster Data, $A_V$={optimal_A_V:.3f}±{optimal_A_V_err:.3f}',
                     markersize=1, zorder=2)
 ax['data'].plot(x, y)
 ax['data'].scatter(BVint, UBint, color='blue', marker='o', label='Intrinsic Data', s=8, zorder=3)
@@ -144,9 +230,8 @@ ax['data'].set_ylabel('(U-B)')
 ax['data'].legend()
 ax['data'].invert_yaxis()
 ax['A_V'].plot(A_V, chiSquared)
-ax['A_V'].scatter(A_V[min_index_chi], chiSquared[min_index_chi], c='r', label=r'Minimum $\chi^2$')
-ax['A_V'].scatter(A_V[index1], chiSquared[index1], c='g', label=fr'1+$\chi^2$')
-ax['A_V'].scatter(A_V[index2], chiSquared[index2], c='g')
+ax['A_V'].errorbar(A_V[min_index_chi], chiSquared[min_index_chi], xerr=lower_err,
+                   capsize=5, fmt='o', elinewidth=1, capthick=1, label=r'Minimum $\chi^2$')
 ax['A_V'].set_xlabel('$A_{V}$ values')
 ax['A_V'].set_ylabel(r'$\chi^{2}$')
 ax['A_V'].legend()
