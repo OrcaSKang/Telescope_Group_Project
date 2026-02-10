@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from scipy import interpolate
 from astropy.table import Table
+import json
 
 ms_data_path = 'main_sequence.dat'
 fake_cluster_path = 'fake_cluster_clean.dat'
@@ -94,6 +95,8 @@ for i in range(0, len(cluster_err_ub)):
 j = np.array(remove_index)
 cluster_ub = np.delete(cluster_ub, j)
 cluster_bv = np.delete(cluster_bv, j)
+cluster_mag_v = np.delete(cluster_mag_v, j)
+cluster_magerr_v = np.delete(cluster_magerr_v, j)
 cluster_err_ub = np.delete(cluster_err_ub, j)
 cluster_err_bv = np.delete(cluster_err_bv, j)
 
@@ -118,6 +121,14 @@ cluster_ub = cluster_ub[SNR>threshold]
 cluster_err_ub = cluster_err_ub[SNR>threshold]
 cluster_bv = cluster_bv[SNR>threshold]
 cluster_err_bv = cluster_err_bv[SNR>threshold]
+cluster_mag_v = cluster_mag_v[SNR>threshold]
+cluster_magerr_v = cluster_magerr_v[SNR>threshold]
+
+# save list outputs for main sequence fitting
+MainSequenceFittingList = list(set(zip(cluster_mag_v, cluster_magerr_v, cluster_bv, cluster_err_bv)))
+
+with open("MainSequenceFittingList.txt", "w") as file:
+    json.dump(MainSequenceFittingList, file)
 
 # Values for R_V, A_U/A_V and A_B/A_V are taken from Cardelli 89
 #A_V = np.arange(0, 2, 0.000001) # overall range
@@ -215,7 +226,31 @@ else:
     print('Error finding the error on the optimal extinction co-efficient')
 
 # plot A_V plot and colour-colour plot side by side
+plt.errorbar(cluster_bv, cluster_ub,
+             yerr=cluster_err_ub, capsize=5, fmt='o', elinewidth=1, capthick=1,
+             color='green', label=f'Observed Cluster Data', markersize=1, zorder=1)
+plt.errorbar(cluster_bv-delx, cluster_ub-dely,
+             yerr=cluster_err_ub, capsize=5, fmt='o', elinewidth=1, capthick=1,
+             color='red', label=fr'Dereddened Cluster Data, $A_V$={optimal_A_V:.3f}±{optimal_A_V_err:.3f}',
+                    markersize=1, zorder=2)
+plt.plot(x, y)
+plt.scatter(BVint, UBint, color='blue', marker='o', label='Intrinsic Data', s=8, zorder=3)
+plt.xlabel('(B-V)')
+plt.ylabel('(U-B)')
+plt.gca().invert_yaxis()
+plt.legend()
+plt.show()
+
+plt.plot(A_V, chiSquared)
+plt.errorbar(A_V[min_index_chi], chiSquared[min_index_chi], xerr=lower_err,
+                   capsize=5, fmt='o', elinewidth=1, capthick=1, label=r'Minimum $\chi^2$')
+plt.xlabel('$A_{V}$ values')
+plt.ylabel(r'$\chi^{2}$')
+plt.legend()
+plt.show()
+
 fig, ax = plt.subplot_mosaic([['data', 'A_V']], figsize=(14, 5))
+
 ax['data'].errorbar(cluster_bv, cluster_ub,
              yerr=cluster_err_ub, capsize=5, fmt='o', elinewidth=1, capthick=1,
              color='green', label=f'Observed Cluster Data', markersize=1, zorder=1)
