@@ -1,9 +1,3 @@
-"""
-Author: Finlay Sime
-
-
-"""
-
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
@@ -15,9 +9,10 @@ import math as m
 ms_data_path = 'main_sequence.dat'
 cluster_path = 'final_catalogue_M52.fits'
 cluster_path_2sigma = 'final_catalogue_M52_2sigma.fits'
+cluster_path_NGC6755 = 'final_catalogue_NGC6755_2sigma.fits'
 # Assuming data is in a structured format like CSV or similar
 ms_data = pd.read_csv(ms_data_path, sep='\\s+', comment='#', engine='python')
-cluster_data = Table.read(cluster_path_2sigma, format='fits')
+cluster_data = Table.read(cluster_path, format='fits')
 
 # convert to numpy array indexing
 ms_data = ms_data.values
@@ -40,25 +35,11 @@ cluster_magerr_b = cluster_magerr_b.astype(float)
 cluster_bv = cluster_mag_b - cluster_mag_v
 cluster_err_bv = np.sqrt(cluster_magerr_v**2 + cluster_magerr_b**2)
 
-# filter out points with large uncertainties
-remove_index = []
-for i in range(0, len(cluster_magerr_v)):
-    if cluster_magerr_v[i] >= 0.05:
-        remove_index.append(i)
-    elif cluster_err_bv[i] >= 0.05:
-        remove_index.append(i)
-
-j = np.array(remove_index)
-#cluster_bv = np.delete(cluster_bv, j)
-#cluster_mag_v = np.delete(cluster_mag_v, j)
-#cluster_magerr_v = np.delete(cluster_magerr_v, j)
-#cluster_err_bv = np.delete(cluster_err_bv, j)
-
-
 # extinction coefficient
-A_V = 3.126
-#A_V = 2.602
-#A_V_err = 0.0000775 # old error
+A_V = 3.126 # M52
+#A_V = 2.151 # NGC 6755
+A_V_err = 0.632 # M52
+#A_V_err = 1.294 # NGC 6755
 R_V = 3.1
 ExtBV = A_V / R_V
 print(f"E(B-V) = {ExtBV}")
@@ -101,21 +82,65 @@ y = f1(x)
 d = np.arange(1, 2000, 1) # create range of possible distances in parsecs
 
 # calculate chi-squared value for each data point
-chiSquared = []
-for i in range(len(d)):
-    dis = d[i]
-    cluster_Mag_v = cluster_mag_v_true - 5*m.log10(dis/10)
 
-    residual = cluster_Mag_v - f1(cluster_bv_true)
+# function to calculate chi-sqaured for A_V values
+def ComputeChiSquared(d, v_data, bv_data, function):
+    chiSquared = []
 
-    chi = np.sum((residual**2)/(f1(cluster_bv_true)+1e-30))
-    chiSquared.append(chi)
+    for i in range(len(d)):
+        dis = d[i]
 
-min_index_chi = np.argmin(chiSquared) # minimise chi-squared
+        cluster_Mag_v = v_data - 5*m.log10(dis/10)
+        residual = cluster_Mag_v - function(bv_data)
+
+        expected_v = function(bv_data)
+
+        # calculate chi-squared
+        chi = np.sum((residual**2)/(expected_v+1e-20))
+        chiSquared.append(chi)
+
+    return chiSquared
+
+chiSquaredOriginal = ComputeChiSquared(d, cluster_mag_v_true, cluster_bv_true, f1)
+
+min_index_chi = np.argmin(chiSquaredOriginal) # minimise chi-squared
 distance = d[min_index_chi] # find most likely distance to cluster via minimum chi-squared
 
+distance_perturbed = []
+M = 50
+for iteration in range(M):
+    print(f"    Iteration {iteration}/{M}")
+
+    A_V_perturbed = np.random.normal(A_V, A_V_err)
+    perturbed_mag_v = np.random.normal(cluster_mag_v, cluster_magerr_v)
+    perturbed_bv = np.random.normal(cluster_bv, cluster_err_bv)
+
+    perturbed_mag_v_true = cluster_mag_v - A_V_perturbed
+    perturbed_bv_true = cluster_bv - (A_V_perturbed/R_V)
+
+    chiSquaredPerturbed = ComputeChiSquared(d, perturbed_mag_v_true, perturbed_bv_true, f1)
+    min_index_perturbed = np.argmin(chiSquaredPerturbed)
+    distance_perturbed.append(d[min_index_perturbed])
+
+distance_perturbed = np.array(distance_perturbed)
+distance_mean = np.mean(distance_perturbed)
+distance_std = np.std(distance_perturbed)
+distance_median = np.median(distance_perturbed)
+
+percentiles = np.percentile(distance_perturbed, [16, 50, 84])
+lower_uncertainty = percentiles[1] - percentiles[0]
+upper_uncertainty = percentiles[2] - percentiles[1]
+
+print("Monte Carlo Results")
+print(f"Optimal distance from original data: {distance:.4f}")
+print(f"Mean distance from MC: {distance_mean:.4f}")
+print(f"Median distance from MC: {distance_median:.4f}")
+print(f"Standard deviation: {distance_std:.4}")
+
+distance_uncertainty = distance_std
+
 cluster_Mag_v = cluster_mag_v_true - 5*m.log10(distance/10)
-print(f"Distance to star cluster: {distance} pc")
+print(f"Distance to star cluster: {distance} ± {distance_uncertainty} pc")
 
 #plot data
 plt.scatter(MSBV, Mv, s=2)
@@ -129,7 +154,7 @@ plt.xlabel('(B-V)')
 plt.legend()
 plt.show()
 
-plt.plot(d, chiSquared)
+plt.plot(d, chiSquaredOriginal)
 plt.xlabel('Distance (pc)')
 plt.ylabel(r'$\chi^2$')
 plt.show()
