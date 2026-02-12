@@ -9,51 +9,59 @@ import matplotlib.pyplot as plt
 import numpy as np
 from scipy import interpolate
 from astropy.table import Table
-import json
-import astropy.units as u
 import math as m
 
 # data paths
 ms_data_path = 'main_sequence.dat'
 cluster_path = 'final_catalogue_M52.fits'
+cluster_path_2sigma = 'final_catalogue_M52_2sigma.fits'
 # Assuming data is in a structured format like CSV or similar
 ms_data = pd.read_csv(ms_data_path, sep='\\s+', comment='#', engine='python')
-cluster_data = Table.read(cluster_path, format='fits')
+cluster_data = Table.read(cluster_path_2sigma, format='fits')
 
 # convert to numpy array indexing
 ms_data = ms_data.values
 
-####################################
-# cluster data is organised as:
-# thresh npix tnpix ... mag_v magerr_v mab_b magerr_b mag_u magerr_u ...
-# [0]    [1]  [2]   ...
+# filter out points beneath a SNR threshold
+snr_threshold = 3
+ok = ((cluster_data['flux_v']/cluster_data['fluxerr_v'] > snr_threshold) &
+      (cluster_data['flux_b']/cluster_data['fluxerr_b'] > snr_threshold))
+cluster_data = cluster_data[ok]
 
-# main sequence data is organised as:
-# SpT Teff logT BCv Mv logL B-V
-####################################
+cluster_mag_v = np.array(cluster_data['mag_v'].tolist())
+cluster_mag_b = np.array(cluster_data['mag_b'].tolist())
+cluster_magerr_v = np.array(cluster_data['magerr_v'].tolist())
+cluster_magerr_b = np.array(cluster_data['magerr_b'].tolist())
+cluster_mag_v = cluster_mag_v.astype(float)
+cluster_mag_b = cluster_mag_b.astype(float)
+cluster_magerr_v = cluster_magerr_v.astype(float)
+cluster_magerr_b = cluster_magerr_b.astype(float)
+# get colours
+cluster_bv = cluster_mag_b - cluster_mag_v
+cluster_err_bv = np.sqrt(cluster_magerr_v**2 + cluster_magerr_b**2)
+
+# filter out points with large uncertainties
+remove_index = []
+for i in range(0, len(cluster_magerr_v)):
+    if cluster_magerr_v[i] >= 0.05:
+        remove_index.append(i)
+    elif cluster_err_bv[i] >= 0.05:
+        remove_index.append(i)
+
+j = np.array(remove_index)
+#cluster_bv = np.delete(cluster_bv, j)
+#cluster_mag_v = np.delete(cluster_mag_v, j)
+#cluster_magerr_v = np.delete(cluster_magerr_v, j)
+#cluster_err_bv = np.delete(cluster_err_bv, j)
+
 
 # extinction coefficient
-A_V = 1.112
-A_V_err = 0.0000775
+A_V = 3.126
+#A_V = 2.602
+#A_V_err = 0.0000775 # old error
 R_V = 3.1
 ExtBV = A_V / R_V
 print(f"E(B-V) = {ExtBV}")
-
-# Load data from Dust_Correction2.py
-with open("MainSequenceFittingList.txt", "r") as file:
-    MainSequenceFittingList = json.load(file)
-print("Loaded list")
-
-# extract data
-cluster_mag_v = []
-cluster_magerr_v = []
-cluster_bv = []
-cluster_err_bv = []
-for i in range(0, len(MainSequenceFittingList)):
-    cluster_mag_v.append(MainSequenceFittingList[i][0])
-    cluster_magerr_v.append(MainSequenceFittingList[i][1])
-    cluster_bv.append(MainSequenceFittingList[i][2])
-    cluster_err_bv.append(MainSequenceFittingList[i][3])
 
 cluster_mag_v = np.array(cluster_mag_v)
 cluster_bv = np.array(cluster_bv)
@@ -63,7 +71,7 @@ cluster_bv_true = cluster_bv - ExtBV
 
 delete_index = []
 for i in range(len(cluster_bv_true)):
-    if cluster_bv_true[i] < 0: # remove unphysical data point
+    if cluster_bv_true[i] < 0: # remove data point causing error
         delete_index.append(i)
 
 cluster_mag_v_true = np.delete(cluster_mag_v_true, delete_index)
@@ -100,7 +108,7 @@ for i in range(len(d)):
 
     residual = cluster_Mag_v - f1(cluster_bv_true)
 
-    chi = np.sum((residual/cluster_magerr_v)**2)
+    chi = np.sum((residual**2)/(f1(cluster_bv_true)+1e-30))
     chiSquared.append(chi)
 
 min_index_chi = np.argmin(chiSquared) # minimise chi-squared
