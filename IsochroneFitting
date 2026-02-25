@@ -1,0 +1,129 @@
+"""
+Python version: 3.10
+pandas version: 1.5.3
+numpy version: 1.23.5
+
+"""
+
+
+import pandas as pd
+import matplotlib.pyplot as plt
+from isochrones import get_ichrone
+from astropy.table import Table
+import numpy as np
+import math as m
+from matplotlib.colors import ListedColormap, BoundaryNorm
+
+M52_data_path = 'final_catalogue_M52_2sigma.fits'
+cluster_data = Table.read(M52_data_path, format='fits')
+
+# filter and extract data from .fits file
+snr_threshold = 3
+ok = ((cluster_data['flux_v']/cluster_data['fluxerr_v'] > snr_threshold) &
+      (cluster_data['flux_b']/cluster_data['fluxerr_b'] > snr_threshold))
+cluster_data = cluster_data[ok]
+
+cluster_mag_v = np.array(cluster_data['mag_v'].tolist())
+cluster_mag_b = np.array(cluster_data['mag_b'].tolist())
+cluster_magerr_v = np.array(cluster_data['magerr_v'].tolist())
+cluster_magerr_b = np.array(cluster_data['magerr_b'].tolist())
+cluster_mag_v = cluster_mag_v.astype(float)
+cluster_mag_b = cluster_mag_b.astype(float)
+cluster_magerr_v = cluster_magerr_v.astype(float)
+cluster_magerr_b = cluster_magerr_b.astype(float)
+cluster_bv = cluster_mag_b - cluster_mag_v
+cluster_err_bv = np.sqrt(cluster_magerr_v**2 + cluster_magerr_b**2)
+cluster_mag_v = np.array(cluster_mag_v)
+cluster_bv = np.array(cluster_bv)
+
+# Intersteller Dust Extinction Coefficient
+AV = 3.1443
+AV_err = 0.6248
+RV = 3.1
+ExtBV = RV/AV
+
+# Distance
+dis = 1315.0513 # pc
+dis_err = 195 # pc
+
+cluster_mag_v_true = cluster_mag_v - AV
+cluster_bv_true = cluster_bv - ExtBV
+
+delete_index = []
+for i in range(len(cluster_bv_true)):
+    if cluster_bv_true[i] < -0.32: # remove data point causing error
+        delete_index.append(i)
+
+cluster_mag_v_true = np.delete(cluster_mag_v_true, delete_index)
+cluster_mag_v = np.delete(cluster_mag_v, delete_index)
+cluster_bv = np.delete(cluster_bv, delete_index)
+cluster_magerr_v = np.delete(cluster_magerr_v, delete_index)
+cluster_bv_true = np.delete(cluster_bv_true, delete_index)
+cluster_err_bv = np.delete(cluster_err_bv, delete_index)
+
+cluster_Mag_v = cluster_mag_v_true - 5*m.log10(dis/10)
+
+mist = get_ichrone('mist')
+
+print("Available bands in MIST:")
+print(mist.bands)
+
+print("All columns in the DataFrame:")
+print(model_df.columns.tolist())
+
+age = 7.8
+feh = -1
+
+iso = get_ichrone('mist', bands=['B', 'V'])
+
+model_temp = iso.isochrone(age=age, feh=feh)
+
+print(*model_temp['initial_mass'])
+
+plt.rcParams.update({'font.size': 18})
+plt.rcParams['font.family'] = 'sans-serif'
+
+iso = get_ichrone('mist', bands=['B', 'V'])
+
+age_values = np.arange(7.8, 8.5, 0.05) # age
+feh_values = np.arange(-1, 0.3, 0.05) #Fe/H
+
+eep_bins = [0, 200, 450, 650, 1000, 1300, 1700, 2000]
+eep_labels = ['Pre-MS', 'Main Seq', 'Subgiant', 'RGB', 
+              'He-burning', 'AGB', 'Post-AGB']
+eep_colors = ['purple', 'blue', 'green', 'orange', 
+              'red', 'brown', 'gray']
+
+cmap = ListedColormap(eep_colors)
+norm = BoundaryNorm(eep_bins, len(eep_colors))
+
+for current_age in age_values:
+    for current_feh in feh_values:
+        model_df = iso.isochrone(age=current_age, feh=current_feh) # generate isochrone model
+        #print(f"Initial Masses of Model: {model_df['initial_mass'].values}")
+        # get model magnitude and colour
+        # (B-V) colour
+        model_color = model_df['B_mag'] - model_df['V_mag']
+        model_mag = model_df['V_mag'] # V Magnitude
+
+        fig, ax = plt.subplots(figsize=(10, 10))
+
+        ax.scatter(cluster_bv_true, cluster_Mag_v,
+                   s=0.5, c='black', alpha=0.6,
+                   label='Cluster Data')
+        line, = ax.plot(model_color, model_mag, '-',
+                    c='red', linewidth=2,
+                    label=f'Age={((10**current_age)/10**6):.2f} Myr, [Fe/H]={current_feh:.2f}')
+        sc = ax.scatter(model_color, model_mag,
+                        c=model_df['eep'], cmap=cmap, norm=norm,
+                        s=7, zorder=5)
+
+        #fig.colorbar(sc, label='Evolutionary Phase')
+        cbar = plt.colorbar(sc, ticks=(np.array(eep_bins[:-1]) + np.array(eep_bins[1:]))/2)
+        cbar.ax.set_yticklabels(eep_labels)
+        cbar.set_label('Equivalent Evolutionary Phase (EEP)')
+
+        ax.set_xlabel('(B-V)')
+        ax.set_ylabel('V')
+        ax.invert_yaxis()
+        plt.show()
